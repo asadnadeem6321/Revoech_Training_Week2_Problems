@@ -1,0 +1,144 @@
+import csv
+import os
+import sys
+from datetime import datetime
+from glob import glob
+from statistics import mean
+from colorama import Fore, Style, init
+
+init(autoreset=True)  # for colored output
+
+def parse_txt_file(file_path):
+    data = []
+    with open(file_path, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        print("Headers detected:", reader.fieldnames)  # Show column headers
+        for row in reader:
+            print("Row:", row)  # Debug each row
+            try:
+                # Adjust date field name if needed (e.g., "PKT", "Date", etc.)
+                date_str = row["PKT"]
+                date = datetime.strptime(date_str.strip(), "%Y-%m-%d")
+                
+                max_temp = int(row["Max TemperatureC"])
+                min_temp = int(row["Min TemperatureC"])
+                humidity = int(row["Mean Humidity"])
+                
+                data.append((date, max_temp, min_temp, humidity))
+            except (KeyError, ValueError) as e:
+                print("Skipping row due to error:", e)
+                continue
+    return data
+
+
+def collect_data(folder_path, area_name, year=None, month=None):
+    area_path = os.path.join(folder_path, f"{area_name.lower()}_weather")
+    if not os.path.exists(area_path):
+        print(f"Folder not found: {area_path}")
+        return []
+
+    files = glob(os.path.join(area_path, "*.txt"))
+    all_data = []
+
+    for file in files:
+        filename = os.path.basename(file)
+        if year and f"{year}" not in filename:
+            continue
+        if month and f"{year}_{month:02d}" not in filename:
+            continue
+        all_data.extend(parse_txt_file(file))
+    return all_data
+
+
+def yearly_report(year, area, base_path):
+    data = collect_data(base_path, area, year=year)
+    if not data:
+        print("No data found.")
+        return
+
+    highest = max(data, key=lambda x: x[1])
+    lowest = min(data, key=lambda x: x[2])
+    most_humid = max(data, key=lambda x: x[3])
+
+    print(f"\n{area.title()} Weather Report - {year}")
+    print(f"Highest: {highest[1]}C on {highest[0].strftime('%B %d')}")
+    print(f"Lowest: {lowest[2]}C on {lowest[0].strftime('%B %d')}")
+    print(f"Humid: {most_humid[3]}% on {most_humid[0].strftime('%B %d')}")
+
+
+def average_report(year, month, area, base_path):
+    data = collect_data(base_path, area, year=year, month=month)
+    if not data:
+        print("No data found.")
+        return
+
+    avg_high = round(mean([d[1] for d in data]))
+    avg_low = round(mean([d[2] for d in data]))
+    avg_hum = round(mean([d[3] for d in data]))
+
+    print(f"\n{area.title()} Weather Averages - {year}/{month:02d}")
+    print(f"Highest Average: {avg_high}C")
+    print(f"Lowest Average: {avg_low}C")
+    print(f"Average Humidity: {avg_hum}%")
+
+
+def bar_chart(year, month, area, base_path, bonus=False):
+    data = collect_data(base_path, area, year=year, month=month)
+    if not data:
+        print("No data found.")
+        return
+
+    print(f"\n{area.title()} Weather Bar Chart - {datetime(year, month, 1).strftime('%B %Y')}")
+    grouped = {}
+
+    for d in data:
+        day = d[0].day
+        if day not in grouped:
+            grouped[day] = []
+        grouped[day].append(d)
+
+    for day in sorted(grouped.keys()):
+        day_data = grouped[day][0]
+        high = day_data[1]
+        low = day_data[2]
+
+        high_bar = Fore.RED + "+" * high + Style.RESET_ALL
+        low_bar = Fore.BLUE + "+" * low + Style.RESET_ALL
+
+        if bonus:
+            print(f"{day:02d} {low_bar} {low}C - {high}C")
+        else:
+            print(f"{day:02d} {high_bar} {high}C")
+            print(f"{day:02d} {low_bar} {low}C")
+
+
+def main():
+    if len(sys.argv) < 5:
+        print("Usage: python weatherman.py [option] [date] [area] [path]")
+        return
+
+    option = sys.argv[1]
+    date = sys.argv[2]
+    area = sys.argv[3]
+    path = sys.argv[4]
+
+    if option == "-e":
+        year = int(date)
+        yearly_report(year, area, path)
+
+    elif option == "-a":
+        year, month = map(int, date.split('/'))
+        average_report(year, month, area, path)
+
+    elif option == "-c":
+        year, month = map(int, date.split('/'))
+        bar_chart(year, month, area, path, bonus=False)
+
+    elif option == "-b":
+        year, month = map(int, date.split('/'))
+        bar_chart(year, month, area, path, bonus=True)
+
+
+if __name__ == "__main__":
+    main()
+
